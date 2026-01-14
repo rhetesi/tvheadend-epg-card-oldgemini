@@ -9,10 +9,11 @@ class TvheadendEpgCard extends HTMLElement {
     this._loading = false;
     this._lastRenderTime = 0;
 
-    this.PX_PER_MIN = 6;
+    // MEGNÖVELT SZÉLESSÉG: 10px per perc a szellősebb megjelenésért
+    this.PX_PER_MIN = 10; 
     this.CHANNEL_COL_WIDTH = 130;
     this.ROW_HEIGHT = 80;
-    this.CARD_GAP = 2; // Kisebb rés a pontosabb illeszkedésért
+    this.CARD_GAP = 2;
 
     this._now = Math.floor(Date.now() / 1000);
 
@@ -45,7 +46,6 @@ class TvheadendEpgCard extends HTMLElement {
       this._entryId = entries[0].entry_id;
       await this._fetchEpg();
     } catch {
-      this._error = "Integráció nem található";
       this._render(true);
     }
   }
@@ -113,7 +113,7 @@ class TvheadendEpgCard extends HTMLElement {
           width: max-content;
         }
 
-        /* Rétegződés beállítása */
+        /* Fejléc és Sarok - legfelső rétegek */
         .corner-spacer {
           position: sticky; top: 0; left: 0; z-index: 100;
           background: var(--secondary-background-color);
@@ -130,6 +130,7 @@ class TvheadendEpgCard extends HTMLElement {
           width: ${gridWidth}px;
         }
 
+        /* Csatorna oszlop - a műsorok felett, de a fejléc alatt */
         .channel-col {
           position: sticky; left: 0; z-index: 80;
           background: var(--ha-card-background, var(--card-background-color, white));
@@ -144,36 +145,41 @@ class TvheadendEpgCard extends HTMLElement {
         .program-grid { 
           position: relative; 
           width: ${gridWidth}px; 
-          z-index: 10;
+          z-index: 10; /* Legalul a műsorok */
         }
 
         .row { height: ${this.ROW_HEIGHT}px; border-bottom: 1px solid var(--divider-color); position: relative; }
 
         .event {
-          position: absolute; top: 6px; height: ${this.ROW_HEIGHT - 12}px;
+          position: absolute; top: 8px; height: ${this.ROW_HEIGHT - 16}px;
           padding: 6px; border-radius: 4px; font-size: 11px; overflow: hidden;
           background: var(--primary-color); color: var(--text-primary-color, white);
           border-left: 3px solid rgba(0,0,0,0.1);
           z-index: 20;
+          /* Minimális szélesség, hogy ne csússzanak egymásra a rövid műsorok */
+          min-width: 20px; 
         }
 
         .event.current {
           background: var(--accent-color);
           color: var(--text-accent-color, white);
-          box-shadow: inset 0 0 0 1px rgba(255,255,255,0.2);
+          font-weight: 500;
         }
 
-        /* Now Line és Marker */
+        .event-title { font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+        /* NOW MARKER (Háromszög a fejlécben) */
         .now-marker {
           position: absolute; bottom: 0; width: 0; height: 0;
-          border-left: 6px solid transparent; border-right: 6px solid transparent;
+          border-left: 7px solid transparent; border-right: 7px solid transparent;
           border-top: 10px solid var(--error-color, #ff4444);
           transform: translateX(-50%); z-index: 95;
         }
 
+        /* NOW LINE (Vonal a műsorok között) */
         .now-line {
           position: absolute; top: 0; bottom: 0; width: 2px;
-          background: var(--error-color, #ff4444); z-index: 70;
+          background: var(--error-color, #ff4444); z-index: 75;
           pointer-events: none;
         }
 
@@ -201,8 +207,8 @@ class TvheadendEpgCard extends HTMLElement {
         const width = ((stop - start) / 60) * this.PX_PER_MIN - this.CARD_GAP;
         const isCurrent = start <= this._now && this._now < stop;
 
-        return `<div class="event ${isCurrent ? 'current' : ''}" style="left:${left}px; width:${Math.max(width, 5)}px;">
-          <div style="font-weight:bold; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${e.title}</div>
+        return `<div class="event ${isCurrent ? 'current' : ''}" style="left:${left}px; width:${Math.max(width, 10)}px;">
+          <div class="event-title">${e.title}</div>
           <div style="font-size:0.9em; opacity:0.8;">${new Date(start * 1000).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</div>
         </div>`;
       }).join("");
@@ -234,13 +240,12 @@ class TvheadendEpgCard extends HTMLElement {
     requestAnimationFrame(() => {
       const wrapper = this.shadowRoot.querySelector(".outer-wrapper");
       if (wrapper) {
-        const offset = wrapper.clientWidth * 0.02;
+        const offset = wrapper.clientWidth * 0.05; // 5% eltolás a szélétől
         wrapper.scrollLeft = nowLeft - offset;
       }
     });
   }
 
   disconnectedCallback() { clearInterval(this._timer); }
-  getCardSize() { return 10; }
 }
 customElements.define("tvheadend-epg-card", TvheadendEpgCard);
