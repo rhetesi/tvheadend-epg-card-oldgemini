@@ -8,6 +8,7 @@ class TvheadendEpgCard extends HTMLElement {
     this._entryId = null;
     this._loading = false;
     this._error = null;
+    this._lastRenderTime = 0; // Utolsó renderelés időpontja
 
     this.PX_PER_MIN = 6;
     this.CHANNEL_COL_WIDTH = 130;
@@ -16,11 +17,11 @@ class TvheadendEpgCard extends HTMLElement {
 
     this._now = Math.floor(Date.now() / 1000);
 
-    // Frissítés percenként
+    // Belső időzítő átállítva 120.000 ms-ra (2 perc)
     this._timer = setInterval(() => {
       this._now = Math.floor(Date.now() / 1000);
-      this._render();
-    }, 60000);
+      this._render(true); // Kényszerített renderelés az időzítőből
+    }, 120000);
   }
 
   setConfig(config) {
@@ -30,7 +31,12 @@ class TvheadendEpgCard extends HTMLElement {
   set hass(hass) {
     this._hass = hass;
     if (!this._entryId && hass) this._resolveEntryId();
-    this._render();
+
+    // Home Assistant frissítési kontroll: csak 2 percenként engedjük újrarenderelni
+    const now = Date.now();
+    if (now - this._lastRenderTime >= 120000) {
+      this._render();
+    }
   }
 
   async _resolveEntryId() {
@@ -44,14 +50,14 @@ class TvheadendEpgCard extends HTMLElement {
       await this._fetchEpg();
     } catch {
       this._error = "TVHeadend EPG integráció nem található";
-      this._render();
+      this._render(true);
     }
   }
 
   async _fetchEpg() {
     if (!this._hass || !this._entryId) return;
     this._loading = true;
-    this._render();
+    this._render(true);
 
     try {
       const result = await this._hass.connection.sendMessagePromise({
@@ -63,12 +69,13 @@ class TvheadendEpgCard extends HTMLElement {
       this._error = "EPG betöltési hiba";
     } finally {
       this._loading = false;
-      this._render();
+      this._render(true);
     }
   }
 
-  _render() {
-    if (!this.shadowRoot) return;
+  _render(force = false) {
+    if (!this.shadowRoot || (!force && Date.now() - this._lastRenderTime < 120000)) return;
+    this._lastRenderTime = Date.now();
 
     const byChannel = {};
     let minStart = Infinity;
@@ -112,7 +119,6 @@ class TvheadendEpgCard extends HTMLElement {
           overflow: auto;
           max-height: 750px;
           position: relative;
-          display: block; 
         }
 
         .epg-grid {
@@ -123,107 +129,75 @@ class TvheadendEpgCard extends HTMLElement {
         }
 
         .corner-spacer {
-          position: sticky;
-          top: 0;
-          left: 0;
-          z-index: 100;
+          position: sticky; top: 0; left: 0; z-index: 100;
           background: var(--secondary-background-color);
           border-bottom: 2px solid var(--divider-color);
           border-right: 2px solid var(--divider-color);
-          height: 40px;
-          display: flex;
-          align-items: center;
-          padding-left: 10px;
-          font-weight: bold;
-          font-size: 12px;
+          height: 40px; display: flex; align-items: center; padding-left: 10px; font-weight: bold; font-size: 12px;
         }
 
         .time-header {
-          position: sticky;
-          top: 0;
-          z-index: 50;
+          position: sticky; top: 0; z-index: 50;
           background: var(--secondary-background-color);
-          height: 40px;
-          border-bottom: 2px solid var(--divider-color);
+          height: 40px; border-bottom: 2px solid var(--divider-color);
           width: ${gridWidth}px;
         }
 
         .channel-col {
-          position: sticky;
-          left: 0;
-          z-index: 40;
+          position: sticky; left: 0; z-index: 40;
           background: var(--ha-card-background, var(--card-background-color, white));
           border-right: 2px solid var(--divider-color);
         }
 
         .channel-cell {
-          height: ${this.ROW_HEIGHT}px;
-          display: flex;
-          flex-direction: column;
-          justify-content: center;
-          padding: 0 10px;
-          border-bottom: 1px solid var(--divider-color);
-          box-sizing: border-box;
-          font-size: 13px;
+          height: ${this.ROW_HEIGHT}px; display: flex; flex-direction: column; justify-content: center;
+          padding: 0 10px; border-bottom: 1px solid var(--divider-color); box-sizing: border-box; font-size: 13px;
         }
 
-        .program-grid {
-          position: relative;
-          width: ${gridWidth}px;
-        }
+        .program-grid { position: relative; width: ${gridWidth}px; }
 
-        .row {
-          height: ${this.ROW_HEIGHT}px;
-          border-bottom: 1px solid var(--divider-color);
-          position: relative;
-        }
+        .row { height: ${this.ROW_HEIGHT}px; border-bottom: 1px solid var(--divider-color); position: relative; }
 
+        /* Műsor kártya alapstílus */
         .event {
-          position: absolute;
-          top: 10px;
-          height: ${this.ROW_HEIGHT - 20}px;
-          padding: 8px;
-          border-radius: 6px;
-          font-size: 11px;
-          overflow: hidden;
+          position: absolute; top: 10px; height: ${this.ROW_HEIGHT - 20}px;
+          padding: 8px; border-radius: 6px; font-size: 11px; overflow: hidden;
           box-sizing: border-box;
           background: var(--primary-color);
           color: var(--text-primary-color, white);
           border-left: 3px solid rgba(0,0,0,0.2);
+          transition: background 0.3s;
+        }
+
+        /* 1. PONT: AKTUÁLIS MŰSOR KIEMELÉSE (HA ACCENT SZÍNNEL) */
+        .event.current {
+          background: var(--accent-color);
+          color: var(--text-accent-color, white);
+          font-weight: 500;
+          box-shadow: 0 0 4px rgba(0,0,0,0.2);
         }
 
         .event-title { font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .event-time { font-size: 10px; opacity: 0.9; }
 
         .time-label {
-          position: absolute;
-          border-left: 1px solid var(--divider-color);
-          height: 40px;
-          padding-left: 6px;
-          font-size: 11px;
-          line-height: 40px;
+          position: absolute; border-left: 1px solid var(--divider-color);
+          height: 40px; padding-left: 6px; font-size: 11px; line-height: 40px;
           color: var(--secondary-text-color);
         }
 
         .now-line {
-          position: absolute;
-          top: 0;
-          bottom: 0;
-          width: 2px;
-          background: var(--error-color, #ff4444);
-          z-index: 60;
+          position: absolute; top: 0; bottom: 0; width: 2px;
+          background: var(--error-color, #ff4444); z-index: 60;
         }
         .now-line::after {
-          content: "";
-          position: absolute; top: 0; left: -4px;
-          border-left: 5px solid transparent;
-          border-right: 5px solid transparent;
+          content: ""; position: absolute; top: 0; left: -4px;
+          border-left: 5px solid transparent; border-right: 5px solid transparent;
           border-top: 8px solid var(--error-color, #ff4444);
         }
       </style>
     `;
 
-    // Időcímkék
     const timeLabels = [];
     for (let t = Math.floor(minStart / 3600) * 3600; t < maxEnd; t += 3600) {
       const left = ((t - minStart) / 60) * this.PX_PER_MIN;
@@ -239,8 +213,11 @@ class TvheadendEpgCard extends HTMLElement {
         const left = ((start - minStart) / 60) * this.PX_PER_MIN;
         const width = ((stop - start) / 60) * this.PX_PER_MIN - this.CARD_GAP;
 
+        // Ellenőrzés: fut-e most a műsor?
+        const isCurrent = start <= this._now && this._now < stop;
+
         return `
-          <div class="event" style="left:${left}px; width:${Math.max(width, 10)}px;">
+          <div class="event ${isCurrent ? 'current' : ''}" style="left:${left}px; width:${Math.max(width, 10)}px;">
             <div class="event-title">${e.title}</div>
             <div class="event-time">${new Date(start * 1000).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</div>
           </div>
@@ -268,7 +245,7 @@ class TvheadendEpgCard extends HTMLElement {
       </ha-card>
     `;
 
-    // KERESETT FUNKCIÓ: Pozicionálás minden renderelésnél
+    // Pozicionálás minden renderelésnél
     requestAnimationFrame(() => {
       const wrapper = this.shadowRoot.querySelector(".outer-wrapper");
       if (wrapper) {
