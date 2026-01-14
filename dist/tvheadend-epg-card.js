@@ -15,8 +15,8 @@ class TvheadendEpgCard extends HTMLElement {
     this.CARD_GAP = 4;
 
     this._now = Math.floor(Date.now() / 1000);
-    this._initialScrolled = false;
 
+    // Frissítés percenként
     this._timer = setInterval(() => {
       this._now = Math.floor(Date.now() / 1000);
       this._render();
@@ -74,7 +74,6 @@ class TvheadendEpgCard extends HTMLElement {
     let minStart = Infinity;
     let maxEnd = -Infinity;
 
-    // Az összes csatorna alapján keressük meg a legszélesebb idősávot
     for (const e of this._epg) {
       const start = Number(e.start);
       const stop = Number(e.stop);
@@ -106,15 +105,13 @@ class TvheadendEpgCard extends HTMLElement {
           background: var(--ha-card-background, var(--card-background-color, white));
           color: var(--primary-text-color);
           overflow: hidden;
-          max-height: 80vh;
+          max-height: 85vh;
         }
 
-        /* A fő görgető sáv */
         .outer-wrapper {
           overflow: auto;
-          max-height: 700px;
+          max-height: 750px;
           position: relative;
-          /* Ez biztosítja, hogy a sticky elemek a görgetőhöz tapadjanak */
           display: block; 
         }
 
@@ -122,10 +119,9 @@ class TvheadendEpgCard extends HTMLElement {
           display: grid;
           grid-template-columns: ${this.CHANNEL_COL_WIDTH}px 1fr;
           position: relative;
-          width: max-content; /* Fontos a vízszintes görgetéshez */
+          width: max-content;
         }
 
-        /* Fix sarok (Bal-Fent) */
         .corner-spacer {
           position: sticky;
           top: 0;
@@ -142,7 +138,6 @@ class TvheadendEpgCard extends HTMLElement {
           font-size: 12px;
         }
 
-        /* Fix fejléc (Fent) */
         .time-header {
           position: sticky;
           top: 0;
@@ -153,7 +148,6 @@ class TvheadendEpgCard extends HTMLElement {
           width: ${gridWidth}px;
         }
 
-        /* Fix csatorna oszlop (Bal) */
         .channel-col {
           position: sticky;
           left: 0;
@@ -171,22 +165,17 @@ class TvheadendEpgCard extends HTMLElement {
           border-bottom: 1px solid var(--divider-color);
           box-sizing: border-box;
           font-size: 13px;
-          white-space: nowrap;
-          overflow: hidden;
         }
 
-        /* Műsor rács */
         .program-grid {
           position: relative;
           width: ${gridWidth}px;
-          background: var(--ha-card-background, var(--card-background-color, white));
         }
 
         .row {
           height: ${this.ROW_HEIGHT}px;
           border-bottom: 1px solid var(--divider-color);
           position: relative;
-          box-sizing: border-box;
         }
 
         .event {
@@ -201,12 +190,10 @@ class TvheadendEpgCard extends HTMLElement {
           background: var(--primary-color);
           color: var(--text-primary-color, white);
           border-left: 3px solid rgba(0,0,0,0.2);
-          display: flex;
-          flex-direction: column;
         }
 
         .event-title { font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .event-time { font-size: 10px; opacity: 0.9; margin-top: 2px; }
+        .event-time { font-size: 10px; opacity: 0.9; }
 
         .time-label {
           position: absolute;
@@ -214,11 +201,10 @@ class TvheadendEpgCard extends HTMLElement {
           height: 40px;
           padding-left: 6px;
           font-size: 11px;
-          color: var(--secondary-text-color);
           line-height: 40px;
+          color: var(--secondary-text-color);
         }
 
-        /* Now Line (Piros vonal) */
         .now-line {
           position: absolute;
           top: 0;
@@ -226,13 +212,10 @@ class TvheadendEpgCard extends HTMLElement {
           width: 2px;
           background: var(--error-color, #ff4444);
           z-index: 60;
-          pointer-events: none;
         }
         .now-line::after {
           content: "";
-          position: absolute;
-          top: 0;
-          left: -4px;
+          position: absolute; top: 0; left: -4px;
           border-left: 5px solid transparent;
           border-right: 5px solid transparent;
           border-top: 8px solid var(--error-color, #ff4444);
@@ -240,6 +223,7 @@ class TvheadendEpgCard extends HTMLElement {
       </style>
     `;
 
+    // Időcímkék
     const timeLabels = [];
     for (let t = Math.floor(minStart / 3600) * 3600; t < maxEnd; t += 3600) {
       const left = ((t - minStart) / 60) * this.PX_PER_MIN;
@@ -271,19 +255,10 @@ class TvheadendEpgCard extends HTMLElement {
         <div class="outer-wrapper">
           <div class="epg-grid">
             <div class="corner-spacer">Csatorna</div>
-            <div class="time-header">
-              ${timeLabels.join("")}
-            </div>
-            
+            <div class="time-header">${timeLabels.join("")}</div>
             <div class="channel-col">
-              ${channels.map(c => `
-                <div class="channel-cell">
-                  <strong>${c.number}</strong>
-                  <span>${c.name}</span>
-                </div>
-              `).join("")}
+              ${channels.map(c => `<div class="channel-cell"><strong>${c.number}</strong><span>${c.name}</span></div>`).join("")}
             </div>
-
             <div class="program-grid">
               <div class="now-line" style="left:${nowLeft}px"></div>
               ${rows}
@@ -293,18 +268,14 @@ class TvheadendEpgCard extends HTMLElement {
       </ha-card>
     `;
 
-    // 3. PONT: POZICIONÁLÁS A NOW-LINE-HOZ
-    if (!this._initialScrolled) {
-      requestAnimationFrame(() => {
-        const wrapper = this.shadowRoot.querySelector(".outer-wrapper");
-        if (wrapper) {
-          // Eltolás: mostVonal - 2% a látható szélességből
-          const offset = wrapper.clientWidth * 0.02;
-          wrapper.scrollLeft = nowLeft - offset;
-          this._initialScrolled = true;
-        }
-      });
-    }
+    // KERESETT FUNKCIÓ: Pozicionálás minden renderelésnél
+    requestAnimationFrame(() => {
+      const wrapper = this.shadowRoot.querySelector(".outer-wrapper");
+      if (wrapper) {
+        const offset = wrapper.clientWidth * 0.02;
+        wrapper.scrollLeft = nowLeft - offset;
+      }
+    });
   }
 
   disconnectedCallback() {
