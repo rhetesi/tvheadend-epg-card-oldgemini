@@ -9,16 +9,15 @@ class TvheadendEpgCard extends HTMLElement {
     this._loading = false;
     this._error = null;
 
-    // Megjelenítési alapértékek
     this.PX_PER_MIN = 6;
-    this.CHANNEL_COL_WIDTH = 150;
+    this.CHANNEL_COL_WIDTH = 130;
     this.ROW_HEIGHT = 80;
     this.CARD_GAP = 4;
 
     this._now = Math.floor(Date.now() / 1000);
     this._initialScrolled = false;
 
-    setInterval(() => {
+    this._timer = setInterval(() => {
       this._now = Math.floor(Date.now() / 1000);
       this._render();
     }, 60000);
@@ -71,11 +70,11 @@ class TvheadendEpgCard extends HTMLElement {
   _render() {
     if (!this.shadowRoot) return;
 
-    // Adatok előkészítése
     const byChannel = {};
     let minStart = Infinity;
     let maxEnd = -Infinity;
 
+    // Az összes csatorna alapján keressük meg a legszélesebb idősávot
     for (const e of this._epg) {
       const start = Number(e.start);
       const stop = Number(e.stop);
@@ -91,8 +90,9 @@ class TvheadendEpgCard extends HTMLElement {
     }
 
     const channels = Object.values(byChannel).sort((a, b) => a.number - b.number);
+    
     if (channels.length === 0 || minStart === Infinity) {
-      this.shadowRoot.innerHTML = `<ha-card><div style="padding:16px;">${this._loading ? "Betöltés..." : "Nincs EPG adat"}</div></ha-card>`;
+      this.shadowRoot.innerHTML = `<ha-card><div style="padding:16px;">${this._loading ? "Frissítés..." : "Nincs EPG adat"}</div></ha-card>`;
       return;
     }
 
@@ -102,85 +102,99 @@ class TvheadendEpgCard extends HTMLElement {
     const style = `
       <style>
         ha-card {
-          height: 100%;
-          display: flex;
-          flex-direction: column;
+          display: block;
           background: var(--ha-card-background, var(--card-background-color, white));
           color: var(--primary-text-color);
           overflow: hidden;
-          --divider: var(--divider-color, #e0e0e0);
+          max-height: 80vh;
         }
 
-        /* 2. pont: Sticky fejléc és fix title */
-        .sticky-header {
+        /* A fő görgető sáv */
+        .outer-wrapper {
+          overflow: auto;
+          max-height: 700px;
+          position: relative;
+          /* Ez biztosítja, hogy a sticky elemek a görgetőhöz tapadjanak */
+          display: block; 
+        }
+
+        .epg-grid {
+          display: grid;
+          grid-template-columns: ${this.CHANNEL_COL_WIDTH}px 1fr;
+          position: relative;
+          width: max-content; /* Fontos a vízszintes görgetéshez */
+        }
+
+        /* Fix sarok (Bal-Fent) */
+        .corner-spacer {
           position: sticky;
           top: 0;
+          left: 0;
           z-index: 100;
-          background: var(--ha-card-background, var(--card-background-color, white));
-        }
-
-        .header-title {
-          padding: 12px 16px;
-          font-size: 18px;
-          font-weight: 600;
-          border-bottom: 1px solid var(--divider);
-        }
-
-        .time-ruler {
-          display: flex;
-          margin-left: ${this.CHANNEL_COL_WIDTH}px;
-          height: 30px;
-          border-bottom: 1px solid var(--divider);
           background: var(--secondary-background-color);
-          position: relative;
+          border-bottom: 2px solid var(--divider-color);
+          border-right: 2px solid var(--divider-color);
+          height: 40px;
+          display: flex;
+          align-items: center;
+          padding-left: 10px;
+          font-weight: bold;
+          font-size: 12px;
+        }
+
+        /* Fix fejléc (Fent) */
+        .time-header {
+          position: sticky;
+          top: 0;
+          z-index: 50;
+          background: var(--secondary-background-color);
+          height: 40px;
+          border-bottom: 2px solid var(--divider-color);
+          width: ${gridWidth}px;
+        }
+
+        /* Fix csatorna oszlop (Bal) */
+        .channel-col {
+          position: sticky;
+          left: 0;
+          z-index: 40;
+          background: var(--ha-card-background, var(--card-background-color, white));
+          border-right: 2px solid var(--divider-color);
+        }
+
+        .channel-cell {
+          height: ${this.ROW_HEIGHT}px;
+          display: flex;
+          flex-direction: column;
+          justify-content: center;
+          padding: 0 10px;
+          border-bottom: 1px solid var(--divider-color);
+          box-sizing: border-box;
+          font-size: 13px;
+          white-space: nowrap;
           overflow: hidden;
         }
 
-        .container {
-          flex: 1;
-          display: flex;
-          overflow: auto; /* Itt görgetünk mindent */
+        /* Műsor rács */
+        .program-grid {
           position: relative;
-        }
-
-        /* 2. pont: Csatorna lista fixálása balra */
-        .channels {
-          position: sticky;
-          left: 0;
-          z-index: 20;
+          width: ${gridWidth}px;
           background: var(--ha-card-background, var(--card-background-color, white));
-          min-width: ${this.CHANNEL_COL_WIDTH}px;
-          border-right: 2px solid var(--divider);
-        }
-
-        .channel {
-          height: ${this.ROW_HEIGHT}px;
-          display: flex;
-          align-items: center;
-          padding: 0 12px;
-          border-bottom: 1px solid var(--divider);
-          box-sizing: border-box;
-          font-size: 13px;
-        }
-
-        .grid {
-          position: relative;
-          flex: 1;
         }
 
         .row {
-          position: relative;
           height: ${this.ROW_HEIGHT}px;
-          border-bottom: 1px solid var(--divider);
-          width: ${gridWidth}px;
+          border-bottom: 1px solid var(--divider-color);
+          position: relative;
+          box-sizing: border-box;
         }
 
         .event {
           position: absolute;
-          top: 8px;
-          height: ${this.ROW_HEIGHT - 16}px;
+          top: 10px;
+          height: ${this.ROW_HEIGHT - 20}px;
           padding: 8px;
-          border-radius: 4px;
+          border-radius: 6px;
           font-size: 11px;
           overflow: hidden;
           box-sizing: border-box;
@@ -192,26 +206,46 @@ class TvheadendEpgCard extends HTMLElement {
         }
 
         .event-title { font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .event-time { font-size: 0.9em; opacity: 0.9; margin-top: 2px; }
+        .event-time { font-size: 10px; opacity: 0.9; margin-top: 2px; }
 
-        /* Most vonal */
+        .time-label {
+          position: absolute;
+          border-left: 1px solid var(--divider-color);
+          height: 40px;
+          padding-left: 6px;
+          font-size: 11px;
+          color: var(--secondary-text-color);
+          line-height: 40px;
+        }
+
+        /* Now Line (Piros vonal) */
         .now-line {
           position: absolute;
           top: 0;
           bottom: 0;
           width: 2px;
           background: var(--error-color, #ff4444);
-          z-index: 50;
+          z-index: 60;
           pointer-events: none;
+        }
+        .now-line::after {
+          content: "";
+          position: absolute;
+          top: 0;
+          left: -4px;
+          border-left: 5px solid transparent;
+          border-right: 5px solid transparent;
+          border-top: 8px solid var(--error-color, #ff4444);
         }
       </style>
     `;
 
-    // Idősáv generálása (óránként)
-    const timeCells = [];
-    for (let t = minStart; t < maxEnd; t += 3600) {
+    const timeLabels = [];
+    for (let t = Math.floor(minStart / 3600) * 3600; t < maxEnd; t += 3600) {
       const left = ((t - minStart) / 60) * this.PX_PER_MIN;
-      timeCells.push(`<div style="position:absolute; left:${left}px; font-size:10px; padding: 6px; color: var(--secondary-text-color); border-left: 1px solid var(--divider); height: 100%;">${new Date(t * 1000).getHours()}:00</div>`);
+      if (left >= 0) {
+        timeLabels.push(`<div class="time-label" style="left:${left}px">${new Date(t * 1000).getHours()}:00</div>`);
+      }
     }
 
     const rows = channels.map(c => {
@@ -222,7 +256,7 @@ class TvheadendEpgCard extends HTMLElement {
         const width = ((stop - start) / 60) * this.PX_PER_MIN - this.CARD_GAP;
 
         return `
-          <div class="event" style="left:${left}px; width:${Math.max(width, 5)}px;">
+          <div class="event" style="left:${left}px; width:${Math.max(width, 10)}px;">
             <div class="event-title">${e.title}</div>
             <div class="event-time">${new Date(start * 1000).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</div>
           </div>
@@ -234,41 +268,50 @@ class TvheadendEpgCard extends HTMLElement {
     this.shadowRoot.innerHTML = `
       ${style}
       <ha-card>
-        <div class="sticky-header">
-          <div class="header-title">TVHeadend EPG</div>
-          <div class="time-ruler">
-            <div style="position:relative; width:${gridWidth}px; height:100%;">
-              ${timeCells.join("")}
+        <div class="outer-wrapper">
+          <div class="epg-grid">
+            <div class="corner-spacer">Csatorna</div>
+            <div class="time-header">
+              ${timeLabels.join("")}
             </div>
-          </div>
-        </div>
-        <div class="container">
-          <div class="channels">
-            ${channels.map(c => `<div class="channel"><strong>${c.number}</strong>&nbsp;${c.name}</div>`).join("")}
-          </div>
-          <div class="grid" style="width:${gridWidth}px">
-            <div class="now-line" style="left:${nowLeft}px"></div>
-            ${rows}
+            
+            <div class="channel-col">
+              ${channels.map(c => `
+                <div class="channel-cell">
+                  <strong>${c.number}</strong>
+                  <span>${c.name}</span>
+                </div>
+              `).join("")}
+            </div>
+
+            <div class="program-grid">
+              <div class="now-line" style="left:${nowLeft}px"></div>
+              ${rows}
+            </div>
           </div>
         </div>
       </ha-card>
     `;
 
-    // 3. pont: Automatikus igazítás a Now Line-hoz + 1-2% eltolás
+    // 3. PONT: POZICIONÁLÁS A NOW-LINE-HOZ
     if (!this._initialScrolled) {
       requestAnimationFrame(() => {
-        const container = this.shadowRoot.querySelector(".container");
-        if (container) {
-          // A látható szélesség 2%-a mint extra margó
-          const offset = container.clientWidth * 0.02; 
-          container.scrollLeft = nowLeft - offset;
+        const wrapper = this.shadowRoot.querySelector(".outer-wrapper");
+        if (wrapper) {
+          // Eltolás: mostVonal - 2% a látható szélességből
+          const offset = wrapper.clientWidth * 0.02;
+          wrapper.scrollLeft = nowLeft - offset;
           this._initialScrolled = true;
         }
       });
     }
   }
 
-  getCardSize() { return 8; }
+  disconnectedCallback() {
+    if (this._timer) clearInterval(this._timer);
+  }
+
+  getCardSize() { return 10; }
 }
 
 customElements.define("tvheadend-epg-card", TvheadendEpgCard);
