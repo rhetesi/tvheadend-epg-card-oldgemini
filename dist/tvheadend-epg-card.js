@@ -9,7 +9,6 @@ class TvheadendEpgCard extends HTMLElement {
     this._loading = false;
     this._lastRenderTime = 0;
 
-    // MEGNÖVELT SZÉLESSÉG: 10px per perc a szellősebb megjelenésért
     this.PX_PER_MIN = 10; 
     this.CHANNEL_COL_WIDTH = 130;
     this.ROW_HEIGHT = 80;
@@ -98,6 +97,8 @@ class TvheadendEpgCard extends HTMLElement {
           background: var(--ha-card-background, var(--card-background-color, white));
           color: var(--primary-text-color);
           overflow: hidden;
+          position: relative;
+          z-index: 1; /* Alacsony alap z-index */
         }
 
         .outer-wrapper {
@@ -113,9 +114,11 @@ class TvheadendEpgCard extends HTMLElement {
           width: max-content;
         }
 
-        /* Fejléc és Sarok - legfelső rétegek */
+        /* --- BELSŐ RÉTEGZŐDÉS (1-5) --- */
+
         .corner-spacer {
-          position: sticky; top: 0; left: 0; z-index: 100;
+          position: sticky; top: 0; left: 0; 
+          z-index: 5; /* Legfelső réteg a kártyán belül */
           background: var(--secondary-background-color);
           border-bottom: 2px solid var(--divider-color);
           border-right: 2px solid var(--divider-color);
@@ -124,28 +127,45 @@ class TvheadendEpgCard extends HTMLElement {
         }
 
         .time-header {
-          position: sticky; top: 0; z-index: 90;
+          position: sticky; top: 0; 
+          z-index: 4; /* Fejléc */
           background: var(--secondary-background-color);
           height: 45px; border-bottom: 2px solid var(--divider-color);
           width: ${gridWidth}px;
         }
 
-        /* Csatorna oszlop - a műsorok felett, de a fejléc alatt */
         .channel-col {
-          position: sticky; left: 0; z-index: 80;
+          position: sticky; left: 0; 
+          z-index: 3; /* Csatorna oszlop */
           background: var(--ha-card-background, var(--card-background-color, white));
           border-right: 2px solid var(--divider-color);
         }
 
-        .channel-cell {
-          height: ${this.ROW_HEIGHT}px; display: flex; flex-direction: column; justify-content: center;
-          padding: 0 10px; border-bottom: 1px solid var(--divider-color); font-size: 13px;
+        .now-marker {
+          position: absolute; bottom: 0; width: 0; height: 0;
+          border-left: 7px solid transparent; border-right: 7px solid transparent;
+          border-top: 10px solid var(--error-color, #ff4444);
+          transform: translateX(-50%); 
+          z-index: 5; /* Fejléccel egy szinten */
+        }
+
+        .now-line {
+          position: absolute; top: 0; bottom: 0; width: 2px;
+          background: var(--error-color, #ff4444); 
+          z-index: 2; /* Műsorok és vonal sávja */
+          pointer-events: none;
         }
 
         .program-grid { 
           position: relative; 
           width: ${gridWidth}px; 
-          z-index: 10; /* Legalul a műsorok */
+          z-index: 1; 
+        }
+
+        /* --- STÍLUSOK --- */
+        .channel-cell {
+          height: ${this.ROW_HEIGHT}px; display: flex; flex-direction: column; justify-content: center;
+          padding: 0 10px; border-bottom: 1px solid var(--divider-color); font-size: 13px;
         }
 
         .row { height: ${this.ROW_HEIGHT}px; border-bottom: 1px solid var(--divider-color); position: relative; }
@@ -155,33 +175,16 @@ class TvheadendEpgCard extends HTMLElement {
           padding: 6px; border-radius: 4px; font-size: 11px; overflow: hidden;
           background: var(--primary-color); color: var(--text-primary-color, white);
           border-left: 3px solid rgba(0,0,0,0.1);
-          z-index: 20;
-          /* Minimális szélesség, hogy ne csússzanak egymásra a rövid műsorok */
+          z-index: 2;
           min-width: 20px; 
         }
 
         .event.current {
           background: var(--accent-color);
           color: var(--text-accent-color, white);
-          font-weight: 500;
         }
 
         .event-title { font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-
-        /* NOW MARKER (Háromszög a fejlécben) */
-        .now-marker {
-          position: absolute; bottom: 0; width: 0; height: 0;
-          border-left: 7px solid transparent; border-right: 7px solid transparent;
-          border-top: 10px solid var(--error-color, #ff4444);
-          transform: translateX(-50%); z-index: 95;
-        }
-
-        /* NOW LINE (Vonal a műsorok között) */
-        .now-line {
-          position: absolute; top: 0; bottom: 0; width: 2px;
-          background: var(--error-color, #ff4444); z-index: 75;
-          pointer-events: none;
-        }
 
         .time-label {
           position: absolute; border-left: 1px solid var(--divider-color);
@@ -240,7 +243,7 @@ class TvheadendEpgCard extends HTMLElement {
     requestAnimationFrame(() => {
       const wrapper = this.shadowRoot.querySelector(".outer-wrapper");
       if (wrapper) {
-        const offset = wrapper.clientWidth * 0.05; // 5% eltolás a szélétől
+        const offset = wrapper.clientWidth * 0.05;
         wrapper.scrollLeft = nowLeft - offset;
       }
     });
