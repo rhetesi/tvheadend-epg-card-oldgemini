@@ -1,0 +1,6 @@
+{
+  "name": "TVHeadend EPG Card",
+  "content_in_root": false,
+  "integration_type": "plugin",
+  "render_readme": true
+}
