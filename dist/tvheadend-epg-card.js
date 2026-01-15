@@ -16,11 +16,10 @@ class TvheadendEpgCard extends HTMLElement {
 
     this._now = Math.floor(Date.now() / 1000);
 
-    // Belső óra frissítése
     this._timer = setInterval(() => {
       this._now = Math.floor(Date.now() / 1000);
       this._render(true);
-    }, 120000);
+    }, 60000); // 1 perces frissítés a pontosabb vonalért
   }
 
   setConfig(config) {
@@ -30,11 +29,7 @@ class TvheadendEpgCard extends HTMLElement {
   set hass(hass) {
     this._hass = hass;
     if (!this._entryId && hass) this._resolveEntryId();
-    
-    const now = Date.now();
-    if (now - this._lastRenderTime >= 120000) {
-      this._render();
-    }
+    if (Date.now() - this._lastRenderTime >= 60000) this._render();
   }
 
   async _resolveEntryId() {
@@ -63,8 +58,28 @@ class TvheadendEpgCard extends HTMLElement {
     }
   }
 
+  _showTooltip(e, content) {
+    const tooltip = this.shadowRoot.getElementById('custom-tooltip');
+    tooltip.innerHTML = content.replace(/\n/g, '<br>');
+    tooltip.style.display = 'block';
+    
+    // Pozicionálás az egér/érintés közelébe, de a kártyán belül tartva
+    const rect = this.getBoundingClientRect();
+    const x = (e.clientX || e.touches[0].clientX) - rect.left;
+    const y = (e.clientY || e.touches[0].clientY) - rect.top - 60;
+    
+    tooltip.style.left = `${Math.max(10, Math.min(x, rect.width - 150))}px`;
+    tooltip.style.top = `${Math.max(10, y)}px`;
+
+    // Automatikus elrejtés mobilon
+    clearTimeout(this._tooltipTimeout);
+    this._tooltipTimeout = setTimeout(() => {
+      tooltip.style.display = 'none';
+    }, 4000);
+  }
+
   _render(force = false) {
-    if (!this.shadowRoot || (!force && Date.now() - this._lastRenderTime < 120000)) return;
+    if (!this.shadowRoot || (!force && Date.now() - this._lastRenderTime < 60000)) return;
     this._lastRenderTime = Date.now();
 
     const byChannel = {};
@@ -98,12 +113,27 @@ class TvheadendEpgCard extends HTMLElement {
           z-index: 1;
         }
 
+        /* EGYEDI TOOLTIP STÍLUS */
+        #custom-tooltip {
+          position: absolute;
+          display: none;
+          background: var(--paper-dialog-background-color, #333);
+          color: white;
+          padding: 8px 12px;
+          border-radius: 4px;
+          font-size: 12px;
+          z-index: 200;
+          pointer-events: none;
+          box-shadow: 0 2px 10px rgba(0,0,0,0.5);
+          max-width: 250px;
+          border: 1px solid var(--divider-color);
+        }
+
         .outer-wrapper {
           overflow: auto;
           max-height: 750px;
           position: relative;
           scroll-snap-type: x proximity;
-          scroll-behavior: smooth;
         }
 
         .epg-grid {
@@ -154,7 +184,6 @@ class TvheadendEpgCard extends HTMLElement {
           pointer-events: none;
           transform: translateX(-50%);
           scroll-snap-align: center;
-          scroll-snap-stop: always;
         }
 
         .program-grid { position: relative; width: ${gridWidth}px; z-index: 1; }
@@ -165,9 +194,7 @@ class TvheadendEpgCard extends HTMLElement {
           background: var(--primary-color); color: var(--text-primary-color, white);
           border-left: 3px solid rgba(0,0,0,0.1);
           z-index: 2;
-          cursor: help;
         }
-        .event:hover { filter: brightness(1.1); }
         .event.current { background: var(--accent-color); color: var(--text-accent-color, white); font-weight: 500; }
         .event-title { font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         
@@ -192,31 +219,10 @@ class TvheadendEpgCard extends HTMLElement {
       }
     }
 
-    const rows = channels.map(c => {
-      const events = c.events.map(e => {
-        const start = Number(e.start);
-        const stop = Number(e.stop);
-        const left = ((start - minStart) / 60) * this.PX_PER_MIN;
-        const width = ((stop - start) / 60) * this.PX_PER_MIN - this.CARD_GAP;
-        const isCurrent = start <= this._now && this._now < stop;
-        const timeStr = new Date(start * 1000).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-        const stopStr = new Date(stop * 1000).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-        
-        const tooltip = `${e.title}\n${timeStr} - ${stopStr}\n${Math.round((stop-start)/60)} perc`;
-
-        return `<div class="event ${isCurrent ? 'current' : ''}" 
-                     style="left:${left}px; width:${Math.max(width, 10)}px;"
-                     title="${tooltip}">
-          <div class="event-title">${e.title}</div>
-          <div style="font-size:0.9em; opacity:0.8;">${timeStr}</div>
-        </div>`;
-      }).join("");
-      return `<div class="row">${events}</div>`;
-    }).join("");
-
     this.shadowRoot.innerHTML = `
       ${style}
       <ha-card>
+        <div id="custom-tooltip"></div>
         <div class="outer-wrapper">
           <div class="epg-grid">
             <div class="corner-spacer">Csatorna</div>
@@ -229,19 +235,46 @@ class TvheadendEpgCard extends HTMLElement {
             </div>
             <div class="program-grid">
               <div class="now-line"></div>
-              ${rows}
+              ${channels.map(c => {
+                const events = c.events.map(e => {
+                  const start = Number(e.start);
+                  const stop = Number(e.stop);
+                  const left = ((start - minStart) / 60) * this.PX_PER_MIN;
+                  const width = ((stop - start) / 60) * this.PX_PER_MIN - this.CARD_GAP;
+                  const isCurrent = start <= this._now && this._now < stop;
+                  const timeStr = new Date(start * 1000).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+                  const stopStr = new Date(stop * 1000).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+                  const tooltipContent = `${e.title}\n${timeStr} - ${stopStr}\n${Math.round((stop-start)/60)} perc`;
+
+                  return `<div class="event ${isCurrent ? 'current' : ''}" 
+                               style="left:${left}px; width:${Math.max(width, 10)}px;"
+                               data-tooltip="${tooltipContent}">
+                    <div class="event-title">${e.title}</div>
+                    <div style="font-size:0.9em; opacity:0.8;">${timeStr}</div>
+                  </div>`;
+                }).join("");
+                return `<div class="row">${events}</div>`;
+              }).join("")}
             </div>
           </div>
         </div>
       </ha-card>
     `;
 
-    // KERESETT JAVÍTÁS: Minden renderelésnél (frissítésnél) lefut a pozicionálás
+    // Tooltip eseménykezelők hozzáadása (mobil és asztali barát)
+    this.shadowRoot.querySelectorAll('.event').forEach(el => {
+      const content = el.getAttribute('data-tooltip');
+      el.addEventListener('mouseenter', (ev) => this._showTooltip(ev, content));
+      el.addEventListener('touchstart', (ev) => this._showTooltip(ev, content));
+      el.addEventListener('mouseleave', () => {
+        this.shadowRoot.getElementById('custom-tooltip').style.display = 'none';
+      });
+    });
+
+    // POZICIONÁLÁS: Now line az 1/5-nél (20%)
     requestAnimationFrame(() => {
       const wrapper = this.shadowRoot.querySelector(".outer-wrapper");
       if (wrapper) {
-        // Úgy pozicionálunk, hogy a piros vonal a kártya bal szélétől 
-        // a látható szélesség 20%-ánál legyen (hogy látszódjon kicsit a múlt is)
         const scrollTarget = nowPos - (wrapper.clientWidth * 0.2);
         wrapper.scrollLeft = Math.max(0, scrollTarget);
       }
