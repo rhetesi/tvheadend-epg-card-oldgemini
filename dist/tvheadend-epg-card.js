@@ -41,7 +41,7 @@ class TvheadendEpgCard extends HTMLElement {
         this._entryId = entries[0].entry_id;
         await this._fetchEpg();
       }
-    } catch (e) { console.error("Entry error", e); }
+    } catch (e) { console.error("Tvheadend EPG hiba:", e); }
   }
 
   async _fetchEpg() {
@@ -64,8 +64,11 @@ class TvheadendEpgCard extends HTMLElement {
     tooltip.style.display = 'block';
     
     const rect = this.getBoundingClientRect();
-    const x = (e.clientX || (e.touches ? e.touches[0].clientX : 0)) - rect.left;
-    const y = (e.clientY || (e.touches ? e.touches[0].clientY : 0)) - rect.top - 60;
+    const clientX = e.touches ? e.changedTouches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.changedTouches[0].clientY : e.clientY;
+    
+    const x = clientX - rect.left;
+    const y = clientY - rect.top - 60;
     
     tooltip.style.left = `${Math.max(10, Math.min(x, rect.width - 180))}px`;
     tooltip.style.top = `${Math.max(10, y)}px`;
@@ -127,7 +130,6 @@ class TvheadendEpgCard extends HTMLElement {
           z-index: 1;
         }
 
-        /* MODAL STÍLUSOK */
         .modal-overlay {
           position: absolute; top: 0; left: 0; width: 100%; height: 100%;
           background: rgba(0,0,0,0.7); display: none; justify-content: center; align-items: center;
@@ -164,8 +166,7 @@ class TvheadendEpgCard extends HTMLElement {
         .now-line { position: absolute; top: 0; bottom: 0; left: var(--now-x); width: 2px; background: var(--error-color, #ff4444); z-index: 5; pointer-events: none; transform: translateX(-50%); scroll-snap-align: center; }
 
         .program-grid { position: relative; width: ${gridWidth}px; z-index: 1; }
-        .event { position: absolute; top: 8px; height: ${this.ROW_HEIGHT - 16}px; padding: 8px; border-radius: 4px; font-size: 11px; overflow: hidden; background: var(--primary-color); color: var(--text-primary-color, white); border-left: 3px solid rgba(0,0,0,0.1); z-index: 2; cursor: pointer; transition: transform 0.1s; }
-        .event:active { transform: scale(0.98); }
+        .event { position: absolute; top: 8px; height: ${this.ROW_HEIGHT - 16}px; padding: 8px; border-radius: 4px; font-size: 11px; overflow: hidden; background: var(--primary-color); color: var(--text-primary-color, white); border-left: 3px solid rgba(0,0,0,0.1); z-index: 2; cursor: pointer; }
         .event.current { background: var(--accent-color); color: var(--text-accent-color, white); font-weight: 500; }
         .event-title { font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         
@@ -185,7 +186,6 @@ class TvheadendEpgCard extends HTMLElement {
       ${style}
       <ha-card>
         <div id="custom-tooltip"></div>
-        
         <div id="details-modal" class="modal-overlay">
           <div class="modal-content">
             <span class="modal-close">&times;</span>
@@ -194,7 +194,6 @@ class TvheadendEpgCard extends HTMLElement {
             <div class="modal-desc"></div>
           </div>
         </div>
-
         <div class="outer-wrapper">
           <div class="epg-grid">
             <div class="corner-spacer">Csatorna</div>
@@ -208,8 +207,7 @@ class TvheadendEpgCard extends HTMLElement {
                 return `<div class="row">${c.events.map((e, idx) => {
                   const left = ((e.start - minStart) / 60) * this.PX_PER_MIN;
                   const width = ((e.stop - e.start) / 60) * this.PX_PER_MIN - this.CARD_GAP;
-                  const isCurrent = e.start <= this._now && this._now < e.stop;
-                  return `<div class="event ${isCurrent ? 'current' : ''}" 
+                  return `<div class="event ${e.start <= this._now && this._now < e.stop ? 'current' : ''}" 
                                style="left:${left}px; width:${Math.max(width, 10)}px;"
                                data-index="${idx}" data-channel="${c.number}">
                     <div class="event-title">${e.title}</div>
@@ -223,26 +221,51 @@ class TvheadendEpgCard extends HTMLElement {
       </ha-card>
     `;
 
-    // ESEMÉNYKEZELŐK
     this.shadowRoot.querySelectorAll('.event').forEach(el => {
       const chNum = el.getAttribute('data-channel');
       const idx = el.getAttribute('data-index');
       const eventData = channels.find(c => c.number == chNum).events[idx];
 
-      // Tooltip (csak asztali hover vagy hosszú érintés helyett egyszerű érintés)
+      let touchTimer;
+      let isLongPress = false;
+
+      // ASZTALI ESEMÉNYEK
       el.addEventListener('mouseenter', (ev) => {
-        const timeStr = new Date(eventData.start * 1000).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-        this._showTooltip(ev, `${eventData.title}\n${timeStr}`);
+        if (ev.sourceCapabilities && !ev.sourceCapabilities.firesTouchEvents) {
+          const timeStr = new Date(eventData.start * 1000).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+          this._showTooltip(ev, `${eventData.title}\n${timeStr}`);
+        }
       });
       el.addEventListener('mouseleave', () => {
         this.shadowRoot.getElementById('custom-tooltip').style.display = 'none';
       });
+      el.addEventListener('click', (ev) => {
+        if (ev.detail !== 0) this._showDetails(eventData);
+      });
 
-      // Kattintás -> Részletek megjelenítése
-      el.addEventListener('click', () => this._showDetails(eventData));
+      // MOBIL ESEMÉNYEK
+      el.addEventListener('touchstart', (ev) => {
+        isLongPress = false;
+        // FRISSÍTETT IDŐZÍTŐ: 800ms
+        touchTimer = setTimeout(() => {
+          isLongPress = true;
+          this._showDetails(eventData);
+          if (navigator.vibrate) navigator.vibrate(50);
+        }, 800);
+      }, { passive: true });
+
+      el.addEventListener('touchend', (ev) => {
+        clearTimeout(touchTimer);
+        if (!isLongPress) {
+          const timeStr = new Date(eventData.start * 1000).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+          this._showTooltip(ev, `${eventData.title}\n${timeStr}`);
+        }
+        if (isLongPress) ev.preventDefault();
+      }, { passive: false });
+
+      el.addEventListener('touchmove', () => clearTimeout(touchTimer), { passive: true });
     });
 
-    // Modal bezárása
     this.shadowRoot.querySelector('.modal-close').addEventListener('click', () => this._closeDetails());
     this.shadowRoot.getElementById('details-modal').addEventListener('click', (e) => {
       if (e.target.id === 'details-modal') this._closeDetails();
