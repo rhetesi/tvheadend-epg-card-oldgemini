@@ -19,7 +19,7 @@ class TvheadendEpgCard extends HTMLElement {
     this._timer = setInterval(() => {
       this._now = Math.floor(Date.now() / 1000);
       this._render(true);
-    }, 60000); // 1 perces frissítés a pontosabb vonalért
+    }, 60000);
   }
 
   setConfig(config) {
@@ -63,19 +63,33 @@ class TvheadendEpgCard extends HTMLElement {
     tooltip.innerHTML = content.replace(/\n/g, '<br>');
     tooltip.style.display = 'block';
     
-    // Pozicionálás az egér/érintés közelébe, de a kártyán belül tartva
     const rect = this.getBoundingClientRect();
-    const x = (e.clientX || e.touches[0].clientX) - rect.left;
-    const y = (e.clientY || e.touches[0].clientY) - rect.top - 60;
+    const x = (e.clientX || (e.touches ? e.touches[0].clientX : 0)) - rect.left;
+    const y = (e.clientY || (e.touches ? e.touches[0].clientY : 0)) - rect.top - 60;
     
-    tooltip.style.left = `${Math.max(10, Math.min(x, rect.width - 150))}px`;
+    tooltip.style.left = `${Math.max(10, Math.min(x, rect.width - 180))}px`;
     tooltip.style.top = `${Math.max(10, y)}px`;
 
-    // Automatikus elrejtés mobilon
     clearTimeout(this._tooltipTimeout);
     this._tooltipTimeout = setTimeout(() => {
       tooltip.style.display = 'none';
     }, 4000);
+  }
+
+  _showDetails(eventData) {
+    const modal = this.shadowRoot.getElementById('details-modal');
+    const start = new Date(Number(eventData.start) * 1000).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+    const stop = new Date(Number(eventData.stop) * 1000).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+    
+    modal.querySelector('.modal-title').innerText = eventData.title;
+    modal.querySelector('.modal-time').innerText = `${start} - ${stop} (${Math.round((eventData.stop-eventData.start)/60)} perc)`;
+    modal.querySelector('.modal-desc').innerText = eventData.description || "Nincs elérhető leírás ehhez a műsorhoz.";
+    
+    modal.style.display = 'flex';
+  }
+
+  _closeDetails() {
+    this.shadowRoot.getElementById('details-modal').style.display = 'none';
   }
 
   _render(force = false) {
@@ -113,147 +127,95 @@ class TvheadendEpgCard extends HTMLElement {
           z-index: 1;
         }
 
-        /* EGYEDI TOOLTIP STÍLUS */
-        #custom-tooltip {
-          position: absolute;
-          display: none;
-          background: var(--paper-dialog-background-color, #333);
-          color: white;
-          padding: 8px 12px;
-          border-radius: 4px;
-          font-size: 12px;
-          z-index: 200;
-          pointer-events: none;
-          box-shadow: 0 2px 10px rgba(0,0,0,0.5);
-          max-width: 250px;
+        /* MODAL STÍLUSOK */
+        .modal-overlay {
+          position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+          background: rgba(0,0,0,0.7); display: none; justify-content: center; align-items: center;
+          z-index: 300; backdrop-filter: blur(2px);
+        }
+        .modal-content {
+          background: var(--ha-card-background, var(--card-background-color, #1c1c1c));
+          width: 85%; max-width: 500px; padding: 20px; border-radius: 12px;
+          position: relative; box-shadow: 0 5px 20px rgba(0,0,0,0.5);
           border: 1px solid var(--divider-color);
         }
+        .modal-close {
+          position: absolute; top: 10px; right: 15px; font-size: 28px;
+          cursor: pointer; color: var(--secondary-text-color); line-height: 1;
+        }
+        .modal-title { font-size: 1.4em; font-weight: bold; margin-bottom: 5px; padding-right: 25px; }
+        .modal-time { color: var(--accent-color); font-weight: 500; margin-bottom: 15px; font-size: 0.9em; }
+        .modal-desc { font-size: 1em; line-height: 1.5; max-height: 300px; overflow-y: auto; color: var(--primary-text-color); }
 
-        .outer-wrapper {
-          overflow: auto;
-          max-height: 750px;
-          position: relative;
-          scroll-snap-type: x proximity;
+        #custom-tooltip {
+          position: absolute; display: none; background: #333; color: white;
+          padding: 8px 12px; border-radius: 4px; font-size: 12px; z-index: 200;
+          pointer-events: none; box-shadow: 0 2px 10px rgba(0,0,0,0.5); max-width: 250px;
         }
 
-        .epg-grid {
-          display: grid;
-          grid-template-columns: ${this.CHANNEL_COL_WIDTH}px 1fr;
-          position: relative;
-          width: max-content;
-          --now-x: ${nowPos}px;
-        }
+        .outer-wrapper { overflow: auto; max-height: 750px; position: relative; scroll-snap-type: x proximity; }
+        .epg-grid { display: grid; grid-template-columns: ${this.CHANNEL_COL_WIDTH}px 1fr; position: relative; width: max-content; --now-x: ${nowPos}px; }
+        
+        .corner-spacer { position: sticky; top: 0; left: 0; z-index: 10; background: var(--secondary-background-color); border-bottom: 2px solid var(--divider-color); border-right: 2px solid var(--divider-color); height: 45px; display: flex; align-items: center; padding-left: 10px; font-weight: bold; font-size: 12px; }
+        .time-header { position: sticky; top: 0; z-index: 8; background: var(--secondary-background-color); height: 45px; border-bottom: 2px solid var(--divider-color); }
+        .channel-col { position: sticky; left: 0; z-index: 7; background: var(--ha-card-background, var(--card-background-color, white)); border-right: 2px solid var(--divider-color); }
 
-        .corner-spacer {
-          position: sticky; top: 0; left: 0; z-index: 10;
-          background: var(--secondary-background-color);
-          border-bottom: 2px solid var(--divider-color);
-          border-right: 2px solid var(--divider-color);
-          height: 45px; display: flex; align-items: center; padding-left: 10px;
-          font-weight: bold; font-size: 12px;
-        }
-
-        .time-header {
-          position: sticky; top: 0; z-index: 8;
-          background: var(--secondary-background-color);
-          height: 45px; border-bottom: 2px solid var(--divider-color);
-        }
-
-        .channel-col {
-          position: sticky; left: 0; z-index: 7;
-          background: var(--ha-card-background, var(--card-background-color, white));
-          border-right: 2px solid var(--divider-color);
-        }
-
-        .now-marker {
-          position: absolute; bottom: 0; width: 0; height: 0;
-          left: var(--now-x);
-          border-left: 7px solid transparent;
-          border-right: 7px solid transparent;
-          border-top: 10px solid var(--error-color, #ff4444);
-          transform: translateX(-50%);
-          z-index: 9;
-        }
-
-        .now-line {
-          position: absolute; top: 0; bottom: 0; 
-          left: var(--now-x);
-          width: 2px;
-          background: var(--error-color, #ff4444); 
-          z-index: 5;
-          pointer-events: none;
-          transform: translateX(-50%);
-          scroll-snap-align: center;
-        }
+        .now-marker { position: absolute; bottom: 0; width: 0; height: 0; left: var(--now-x); border-left: 7px solid transparent; border-right: 7px solid transparent; border-top: 10px solid var(--error-color, #ff4444); transform: translateX(-50%); z-index: 9; }
+        .now-line { position: absolute; top: 0; bottom: 0; left: var(--now-x); width: 2px; background: var(--error-color, #ff4444); z-index: 5; pointer-events: none; transform: translateX(-50%); scroll-snap-align: center; }
 
         .program-grid { position: relative; width: ${gridWidth}px; z-index: 1; }
-
-        .event {
-          position: absolute; top: 8px; height: ${this.ROW_HEIGHT - 16}px;
-          padding: 8px; border-radius: 4px; font-size: 11px; overflow: hidden;
-          background: var(--primary-color); color: var(--text-primary-color, white);
-          border-left: 3px solid rgba(0,0,0,0.1);
-          z-index: 2;
-        }
+        .event { position: absolute; top: 8px; height: ${this.ROW_HEIGHT - 16}px; padding: 8px; border-radius: 4px; font-size: 11px; overflow: hidden; background: var(--primary-color); color: var(--text-primary-color, white); border-left: 3px solid rgba(0,0,0,0.1); z-index: 2; cursor: pointer; transition: transform 0.1s; }
+        .event:active { transform: scale(0.98); }
         .event.current { background: var(--accent-color); color: var(--text-accent-color, white); font-weight: 500; }
         .event-title { font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         
-        .channel-cell {
-          height: ${this.ROW_HEIGHT}px; display: flex; flex-direction: column; justify-content: center;
-          padding: 0 10px; border-bottom: 1px solid var(--divider-color); font-size: 13px;
-        }
+        .channel-cell { height: ${this.ROW_HEIGHT}px; display: flex; flex-direction: column; justify-content: center; padding: 0 10px; border-bottom: 1px solid var(--divider-color); font-size: 13px; }
         .row { height: ${this.ROW_HEIGHT}px; border-bottom: 1px solid var(--divider-color); position: relative; }
-        .time-label {
-          position: absolute; border-left: 1px solid var(--divider-color);
-          height: 45px; padding-left: 5px; font-size: 11px; line-height: 45px;
-          color: var(--secondary-text-color);
-        }
+        .time-label { position: absolute; border-left: 1px solid var(--divider-color); height: 45px; padding-left: 5px; font-size: 11px; line-height: 45px; color: var(--secondary-text-color); }
       </style>
     `;
 
     const timeLabels = [];
     for (let t = Math.floor(minStart / 3600) * 3600; t < maxEnd; t += 3600) {
       const left = ((t - minStart) / 60) * this.PX_PER_MIN;
-      if (left >= 0) {
-        timeLabels.push(`<div class="time-label" style="left:${left}px">${new Date(t * 1000).getHours()}:00</div>`);
-      }
+      if (left >= 0) timeLabels.push(`<div class="time-label" style="left:${left}px">${new Date(t * 1000).getHours()}:00</div>`);
     }
 
     this.shadowRoot.innerHTML = `
       ${style}
       <ha-card>
         <div id="custom-tooltip"></div>
+        
+        <div id="details-modal" class="modal-overlay">
+          <div class="modal-content">
+            <span class="modal-close">&times;</span>
+            <div class="modal-title"></div>
+            <div class="modal-time"></div>
+            <div class="modal-desc"></div>
+          </div>
+        </div>
+
         <div class="outer-wrapper">
           <div class="epg-grid">
             <div class="corner-spacer">Csatorna</div>
-            <div class="time-header">
-              <div class="now-marker"></div>
-              ${timeLabels.join("")}
-            </div>
+            <div class="time-header"><div class="now-marker"></div>${timeLabels.join("")}</div>
             <div class="channel-col">
               ${channels.map(c => `<div class="channel-cell"><strong>${c.number}</strong><span>${c.name}</span></div>`).join("")}
             </div>
             <div class="program-grid">
               <div class="now-line"></div>
               ${channels.map(c => {
-                const events = c.events.map(e => {
-                  const start = Number(e.start);
-                  const stop = Number(e.stop);
-                  const left = ((start - minStart) / 60) * this.PX_PER_MIN;
-                  const width = ((stop - start) / 60) * this.PX_PER_MIN - this.CARD_GAP;
-                  const isCurrent = start <= this._now && this._now < stop;
-                  const timeStr = new Date(start * 1000).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-                  const stopStr = new Date(stop * 1000).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-                  const tooltipContent = `${e.title}\n${timeStr} - ${stopStr}\n${Math.round((stop-start)/60)} perc`;
-
+                return `<div class="row">${c.events.map((e, idx) => {
+                  const left = ((e.start - minStart) / 60) * this.PX_PER_MIN;
+                  const width = ((e.stop - e.start) / 60) * this.PX_PER_MIN - this.CARD_GAP;
+                  const isCurrent = e.start <= this._now && this._now < e.stop;
                   return `<div class="event ${isCurrent ? 'current' : ''}" 
                                style="left:${left}px; width:${Math.max(width, 10)}px;"
-                               data-tooltip="${tooltipContent}">
+                               data-index="${idx}" data-channel="${c.number}">
                     <div class="event-title">${e.title}</div>
-                    <div style="font-size:0.9em; opacity:0.8;">${timeStr}</div>
+                    <div style="font-size:0.9em; opacity:0.8;">${new Date(e.start * 1000).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</div>
                   </div>`;
-                }).join("");
-                return `<div class="row">${events}</div>`;
+                }).join("")}</div>`;
               }).join("")}
             </div>
           </div>
@@ -261,26 +223,35 @@ class TvheadendEpgCard extends HTMLElement {
       </ha-card>
     `;
 
-    // Tooltip eseménykezelők hozzáadása (mobil és asztali barát)
+    // ESEMÉNYKEZELŐK
     this.shadowRoot.querySelectorAll('.event').forEach(el => {
-      const content = el.getAttribute('data-tooltip');
-      el.addEventListener('mouseenter', (ev) => this._showTooltip(ev, content));
-      el.addEventListener('touchstart', (ev) => this._showTooltip(ev, content));
+      const chNum = el.getAttribute('data-channel');
+      const idx = el.getAttribute('data-index');
+      const eventData = channels.find(c => c.number == chNum).events[idx];
+
+      // Tooltip (csak asztali hover vagy hosszú érintés helyett egyszerű érintés)
+      el.addEventListener('mouseenter', (ev) => {
+        const timeStr = new Date(eventData.start * 1000).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
+        this._showTooltip(ev, `${eventData.title}\n${timeStr}`);
+      });
       el.addEventListener('mouseleave', () => {
         this.shadowRoot.getElementById('custom-tooltip').style.display = 'none';
       });
+
+      // Kattintás -> Részletek megjelenítése
+      el.addEventListener('click', () => this._showDetails(eventData));
     });
 
-    // POZICIONÁLÁS: Now line az 1/5-nél (20%)
+    // Modal bezárása
+    this.shadowRoot.querySelector('.modal-close').addEventListener('click', () => this._closeDetails());
+    this.shadowRoot.getElementById('details-modal').addEventListener('click', (e) => {
+      if (e.target.id === 'details-modal') this._closeDetails();
+    });
+
     requestAnimationFrame(() => {
       const wrapper = this.shadowRoot.querySelector(".outer-wrapper");
-      if (wrapper) {
-        const scrollTarget = nowPos - (wrapper.clientWidth * 0.2);
-        wrapper.scrollLeft = Math.max(0, scrollTarget);
-      }
+      if (wrapper) wrapper.scrollLeft = nowPos - (wrapper.clientWidth * 0.2);
     });
   }
-
-  disconnectedCallback() { clearInterval(this._timer); }
 }
 customElements.define("tvheadend-epg-card", TvheadendEpgCard);
